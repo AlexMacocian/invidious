@@ -268,20 +268,17 @@ module Invidious::Routes::Login
   def self.user_flow_existing(env, email)
     sid = Base64.urlsafe_encode(Random::Secure.random_bytes(32))
     Invidious::Database::SessionIDs.insert(sid, email)
-    if CONFIG.domain == "localhost"
-      env.response.cookies["SID"] = HTTP::Cookie.new(
-        name: "SID",
-        domain: nil,
-        value: sid,
-        expires: Time.utc + 2.years,
-        secure: false,
-        http_only: true,
-        samesite: HTTP::Cookie::SameSite::Lax,
-        path: "/"
-      )
-    else
-      env.response.cookies["SID"] = Invidious::User::Cookies.sid(CONFIG.domain, sid)
-    end
+    # Create SID cookie with correct path for all domains
+    env.response.cookies["SID"] = HTTP::Cookie.new(
+      name: "SID",
+      domain: CONFIG.domain == "localhost" ? nil : CONFIG.domain,
+      value: sid,
+      expires: Time.utc + 2.years,
+      secure: CONFIG.https_only || CONFIG.domain != "localhost",
+      http_only: true,
+      samesite: HTTP::Cookie::SameSite::Lax,
+      path: "/"
+    )
 
     if env.request.cookies["PREFS"]?
       cookie = env.request.cookies["PREFS"]
@@ -310,20 +307,17 @@ module Invidious::Routes::Login
     view_name = "subscriptions_#{sha256(user.email)}"
     PG_DB.exec("CREATE MATERIALIZED VIEW #{view_name} AS #{MATERIALIZED_VIEW_SQL.call(user.email)}")
 
-    if CONFIG.domain == "localhost"
-      env.response.cookies["SID"] = HTTP::Cookie.new(
-        name: "SID",
-        domain: nil,
-        value: sid,
-        expires: Time.utc + 2.years,
-        secure: false,
-        http_only: true,
-        samesite: HTTP::Cookie::SameSite::Lax,
-        path: "/"
-      )
-    else
-      env.response.cookies["SID"] = Invidious::User::Cookies.sid(CONFIG.domain, sid)
-    end
+    # Create SID cookie with correct path for all domains
+    env.response.cookies["SID"] = HTTP::Cookie.new(
+      name: "SID",
+      domain: CONFIG.domain == "localhost" ? nil : CONFIG.domain,
+      value: sid,
+      expires: Time.utc + 2.years,
+      secure: CONFIG.https_only || CONFIG.domain != "localhost",
+      http_only: true,
+      samesite: HTTP::Cookie::SameSite::Lax,
+      path: "/"
+    )
 
     if env.request.cookies["PREFS"]?
       user.preferences = env.get("preferences").as(Preferences)
