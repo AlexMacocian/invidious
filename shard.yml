@@ -27,6 +27,9 @@ dependencies:
   http_proxy:
     github: mamantoha/http_proxy
     version: ~> 0.10.3
+  jwt:
+    github: crystal-community/jwt
+    version: ~> 1.6.0
 
 development_dependencies:
   spectator:

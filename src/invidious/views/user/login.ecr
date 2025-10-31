@@ -6,7 +6,32 @@
     <div class="pure-u-1 pure-u-lg-1-5"></div>
     <div class="pure-u-1 pure-u-lg-3-5">
         <div class="h-box">
-            <% case account_type when %>
+            <% if CONFIG.auth_type.size > 1 && account_type.empty? %>
+                <h3><%= translate(locale, "Log in") %></h3>
+                <p>Choose authentication method:</p>
+                <% if CONFIG.auth_internal_enabled? %>
+                    <a href="/login?type=invidious&referer=<%= URI.encode_www_form(referer) %>" class="pure-button pure-button-primary" style="width: 100%; margin-bottom: 10px; display: block; text-align: center; text-decoration: none;">
+                        Login with Invidious Account
+                    </a>
+                <% end %>
+                <% if CONFIG.auth_oidc_enabled? %>
+                    <a href="/login?type=oidc&referer=<%= URI.encode_www_form(referer) %>" class="pure-button pure-button-primary" style="width: 100%; margin-bottom: 10px; display: block; text-align: center; text-decoration: none;">
+                        Login with OIDC
+                    </a>
+                <% end %>
+            <% else %>
+                <% case account_type when %>
+            <% when "oidc" %>
+                <h3><%= translate(locale, "Log in") %></h3>
+                <p>Select an OIDC provider to log in:</p>
+                <% CONFIG.oidc.each do |provider_key, provider| %>
+                    <form class="pure-form" action="/login?referer=<%= URI.encode_www_form(referer) %>&type=oidc" method="post">
+                        <input type="hidden" name="provider" value="<%= provider_key %>">
+                        <button type="submit" class="pure-button pure-button-primary" style="width: 100%; margin-bottom: 10px;">
+                            Login with <%= provider_key.capitalize %>
+                        </button>
+                    </form>
+                <% end %>
             <% else # "invidious" %>
                 <form class="pure-form pure-form-stacked" action="/login?referer=<%= URI.encode_www_form(referer) %>&type=invidious" method="post">
                     <fieldset>
@@ -43,6 +68,7 @@
                         <% end %>
                     </fieldset>
                 </form>
+                <% end %>
             <% end %>
         </div>
     </div>
