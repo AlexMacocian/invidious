@@ -8,6 +8,21 @@ struct DBConfig
   property dbname : String
 end
 
+struct OIDCConfig
+  include YAML::Serializable
+
+  property issuer : String
+  property client_id : String
+  property client_secret : String
+  property field : String = "email"
+  property scopes : Array(String) = ["openid", "email", "profile"]
+  property discovery_endpoint : String? = nil
+  property auth_endpoint : String? = nil
+  property token_endpoint : String? = nil
+  property userinfo_endpoint : String? = nil
+  property jwks_uri : String? = nil
+end
+
 struct SocketBindingConfig
   include YAML::Serializable
 
@@ -185,6 +200,11 @@ class Config
   @[YAML::Field(converter: Preferences::StringToCookies)]
   property cookies : HTTP::Cookies = HTTP::Cookies.new
 
+  # Authentication configuration
+  property auth_type : Array(String) = ["invidious"]
+  property auth_enforce_source : Bool = true
+  property oidc = {} of String => OIDCConfig
+
   # Playlist length limit
   property playlist_length_limit : Int32 = 500
 
@@ -201,6 +221,14 @@ class Config
     else
       return false
     end
+  end
+
+  def auth_oidc_enabled?
+    return (@auth_type.find(&.== "oidc") && @oidc.size > 0)
+  end
+
+  def auth_internal_enabled?
+    return (@auth_type.find(&.== "invidious"))
   end
 
   def self.load

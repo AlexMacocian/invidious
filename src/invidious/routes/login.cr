@@ -19,7 +19,16 @@ module Invidious::Routes::Login
     captcha = nil
 
     account_type = env.params.query["type"]?
-    account_type ||= "invidious"
+    account_type ||= ""
+
+    if CONFIG.auth_type.size == 0
+      return error_template(401, "No authentication backend enabled.")
+    elsif CONFIG.auth_type.find(&.== account_type).nil? && CONFIG.auth_type.size == 1
+      account_type = CONFIG.auth_type[0]
+    end
+
+    captcha_type = env.params.query["captcha"]?
+    captcha_type ||= "image"
 
     templated "user/login"
   end
@@ -41,6 +50,22 @@ module Invidious::Routes::Login
     account_type ||= "invidious"
 
     case account_type
+    when "oidc"
+      provider_k = env.params.body["provider"]
+      state = Base64.urlsafe_encode(Random::Secure.random_bytes(32))
+      nonce = Base64.urlsafe_encode(Random::Secure.random_bytes(32))
+
+      env.response.cookies["OIDC_STATE"] = HTTP::Cookie.new(
+        name: "OIDC_STATE",
+        value: "#{state}:#{nonce}:#{provider_k}",
+        path: "/",
+        expires: Time.utc + 10.minutes,
+        secure: CONFIG.https_only == true,
+        http_only: true
+      )
+      
+      authorization_url = OIDCHelper.get_authorization_url(provider_k, state, nonce)
+      env.redirect authorization_url
     when "invidious"
       if email.nil? || email.empty?
         return error_template(401, "User ID is a required field")
@@ -168,5 +193,138 @@ module Invidious::Routes::Login
     end
 
     env.redirect referer
+  end
+
+  def self.oidc_callback(env)
+    locale = env.get("preferences").as(Preferences).locale
+    referer = get_referer(env, "/feed/subscriptions")
+
+    authorization_code = env.params.query["code"]?
+    state = env.params.query["state"]?
+    provider_k = env.params.url["provider"]
+
+    if authorization_code.nil?
+      return error_template(403, "Missing authorization code")
+    end
+
+    if state.nil?
+      return error_template(403, "Missing state parameter")
+    end
+
+    state_cookie = env.request.cookies["OIDC_STATE"]?
+    if !state_cookie
+      return error_template(403, "Missing state cookie")  
+    end
+
+    state_parts = state_cookie.value.split(":")
+    if state_parts.size != 3 || state_parts[0] != state || state_parts[2] != provider_k
+      return error_template(403, "Invalid state")
+    end
+
+    stored_state, nonce, stored_provider = state_parts
+
+    env.response.cookies["OIDC_STATE"] = HTTP::Cookie.new(
+      name: "OIDC_STATE",
+      value: "",
+      path: "/",
+      expires: Time.utc(1990, 1, 1)
+    )
+
+    begin
+      token_response = OIDCHelper.exchange_code_for_tokens(provider_k, authorization_code)
+      id_token = token_response["id_token"]?.try(&.as_s)
+      access_token = token_response["access_token"]?.try(&.as_s)
+      
+      if !id_token
+        return error_template(500, "No ID token received")
+      end
+
+      id_token_payload = OIDCHelper.verify_id_token(provider_k, id_token, nonce)
+      userinfo = nil
+      if access_token
+        userinfo = OIDCHelper.get_userinfo(provider_k, access_token)
+      end
+
+      email = OIDCHelper.extract_user_email(provider_k, id_token_payload, userinfo)
+
+      if user = Invidious::Database::Users.select(email: email)
+        if CONFIG.auth_enforce_source && user.password != ("oidc:" + provider_k)
+          return error_template(401, "Wrong authentication provider")
+        else
+          user_flow_existing(env, email)
+        end
+      else
+        user_flow_new(env, email, nil, "oidc:" + provider_k)
+      end
+
+    rescue ex
+      LOGGER.error("OIDC authentication error: #{ex.message}")
+      return error_template(500, "Authentication failed: #{ex.message}")
+    end
+
+    env.redirect referer
+  end
+
+  def self.user_flow_existing(env, email)
+    sid = Base64.urlsafe_encode(Random::Secure.random_bytes(32))
+    Invidious::Database::SessionIDs.insert(sid, email)
+    # Create SID cookie with correct path for all domains
+    env.response.cookies["SID"] = HTTP::Cookie.new(
+      name: "SID",
+      domain: CONFIG.domain == "localhost" ? nil : CONFIG.domain,
+      value: sid,
+      expires: Time.utc + 2.years,
+      secure: CONFIG.https_only || CONFIG.domain != "localhost",
+      http_only: true,
+      samesite: HTTP::Cookie::SameSite::Lax,
+      path: "/"
+    )
+
+    if env.request.cookies["PREFS"]?
+      cookie = env.request.cookies["PREFS"]
+      cookie.expires = Time.utc(1990, 1, 1)
+      env.response.cookies << cookie
+    end
+  end
+
+  def self.user_flow_new(env, email, password, provider)
+    sid = Base64.urlsafe_encode(Random::Secure.random_bytes(32))
+    if provider.starts_with?("oidc:")
+      user, sid = create_oidc_user(sid, email, provider)
+    else
+      user, sid = create_user(sid, email, password)
+    end
+
+    if language_header = env.request.headers["Accept-Language"]?
+      if language = ANG.language_negotiator.best(language_header, LOCALES.keys)
+        user.preferences.locale = language.header
+      end
+    end
+
+    Invidious::Database::Users.insert(user)
+    Invidious::Database::SessionIDs.insert(sid, email)
+
+    view_name = "subscriptions_#{sha256(user.email)}"
+    PG_DB.exec("CREATE MATERIALIZED VIEW #{view_name} AS #{MATERIALIZED_VIEW_SQL.call(user.email)}")
+
+    # Create SID cookie with correct path for all domains
+    env.response.cookies["SID"] = HTTP::Cookie.new(
+      name: "SID",
+      domain: CONFIG.domain == "localhost" ? nil : CONFIG.domain,
+      value: sid,
+      expires: Time.utc + 2.years,
+      secure: CONFIG.https_only || CONFIG.domain != "localhost",
+      http_only: true,
+      samesite: HTTP::Cookie::SameSite::Lax,
+      path: "/"
+    )
+
+    if env.request.cookies["PREFS"]?
+      user.preferences = env.get("preferences").as(Preferences)
+      Invidious::Database::Users.update_preferences(user)
+      cookie = env.request.cookies["PREFS"]
+      cookie.expires = Time.utc(1990, 1, 1)
+      env.response.cookies << cookie
+    end
   end
 end

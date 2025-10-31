@@ -18,6 +18,8 @@ services:
       invidious-db:
         condition: service_healthy
         restart: true
+      companion:
+        condition: service_started
     environment:
       # Please read the following file for a comprehensive list of all available
       # configuration options and their associated syntax:
@@ -30,16 +32,52 @@ services:
           host: invidious-db
           port: 5432
         check_tables: true
-        # external_port:
-        # domain:
-        # https_only: false
-        # statistics_enabled: false
-        hmac_key: "CHANGE_ME!!"
+        domain: localhost
+        external_port: 3000
+        https_only: false
+        hmac_key: "localhost-test-hmac-key-change-me-in-production"
+        invidious_companion:
+          - private_url: "http://companion:8282/companion"
+        invidious_companion_key: "localhosttest123"
+        popular_enabled: false
+        top_enabled: false
+        feed_menu: []
+        default_home: Search
+        auth_type: ["invidious"]
+
+        # Below multiple authentication types can be defined
+        # The oidc authentication requires additional oidc configuration per oidc provider. OIDC provider names are specified in the configuration subtree
+        # Issuer url is the base url (without the .well-known/openid-configuration).
+        # OIDC handler expects your provider to have a redirect url in the format of {invidious_domain}/login/oidc/{oidc_name}/callback
+
+        # auth_type: ["invidious", "oidc"]
+        # auth_enforce_source: true
+        # OIDC configuration
+        # oidc:
+          # my-oidc:
+            # issuer: "ISSUER_URL!!"
+            # client_id: "CLIENT_ID!!"
+            # client_secret: "CLIENT_SECRET!!"
+            # field: "email"
+            # scopes: ["openid", "email", "profile"]
     healthcheck:
       test: wget -nv --tries=1 --spider http://127.0.0.1:3000/api/v1/trending || exit 1
       interval: 30s
       timeout: 5s
       retries: 2
+
+  companion:
+    image: quay.io/invidious/invidious-companion:latest
+    restart: unless-stopped
+    environment:
+      - SERVER_SECRET_KEY=localhosttest123
+    cap_drop:
+      - ALL
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - companioncache:/var/tmp/youtubei.js:rw
 
   invidious-db:
     image: docker.io/library/postgres:14
@@ -57,3 +95,4 @@ services:
 
 volumes:
   postgresdata:
+  companioncache:
