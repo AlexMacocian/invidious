@@ -46,11 +46,11 @@ services:
         auth_type: ["invidious"]
 
         # Below multiple authentication types can be defined
-        # The oidc authentication names must match the names of the configuration subtree in the "oidc" section
+        # The oidc authentication requires additional oidc configuration per oidc provider. OIDC provider names are specified in the configuration subtree
         # Issuer url is the base url (without the .well-known/openid-configuration).
         # OIDC handler expects your provider to have a redirect url in the format of {invidious_domain}/login/oidc/{oidc_name}/callback
 
-        # auth_type: ["invidious", "my-oidc"]
+        # auth_type: ["invidious", "oidc"]
         # auth_enforce_source: true
         # OIDC configuration
         # oidc:
