@@ -84,6 +84,7 @@ HTTP_CHUNK_SIZE            = 10485760 # ~10MB
 CURRENT_BRANCH  = {{ "#{`git branch | sed -n '/* /s///p'`.strip}" }}
 CURRENT_COMMIT  = {{ "#{`git rev-list HEAD --max-count=1 --abbrev-commit`.strip}" }}
 CURRENT_VERSION = {{ "#{`git log -1 --format=%ci | awk '{print $1}' | sed s/-/./g`.strip}" }}
+CURRENT_TAG     = {{ "#{`git tag --points-at HEAD`.strip}" }}
 
 # This is used to determine the `?v=` on the end of file URLs (for cache busting). We
 # only need to expire modified assets, so we can use this to find the last commit that changes
@@ -170,15 +171,6 @@ Invidious::Database.check_integrity(CONFIG)
   {% puts "\nDone checking player dependencies, now compiling Invidious...\n" %}
 {% end %}
 
-# Misc
-
-DECRYPT_FUNCTION =
-  if sig_helper_address = CONFIG.signature_server.presence
-    IV::DecryptFunction.new(sig_helper_address)
-  else
-    nil
-  end
-
 # Start jobs
 
 if CONFIG.channel_threads > 0
@@ -258,6 +250,8 @@ Kemal.config.app_name = "Invidious"
 {% end %}
 
 Kemal.run do |config|
+  config.server.not_nil!.max_request_line_size = 16384
+
   if socket_binding = CONFIG.socket_binding
     File.delete?(socket_binding.path)
     # Create a socket and set its desired permissions
