@@ -78,7 +78,7 @@ TEST_IDS           = {"AgbeGFYluEA", "BaW_jenozKc", "a9LDPn-MO4I", "ddFvjfvPnqk"
 MAX_ITEMS_PER_PAGE = 1500
 
 REQUEST_HEADERS_WHITELIST  = {"accept", "accept-encoding", "cache-control", "content-length", "if-none-match", "range"}
-RESPONSE_HEADERS_BLACKLIST = {"access-control-allow-origin", "alt-svc", "server"}
+RESPONSE_HEADERS_BLACKLIST = {"access-control-allow-origin", "alt-svc", "server", "cross-origin-opener-policy-report-only", "report-to", "cross-origin", "timing-allow-origin", "cross-origin-resource-policy"}
 HTTP_CHUNK_SIZE            = 10485760 # ~10MB
 
 CURRENT_BRANCH  = {{ "#{`git branch | sed -n '/* /s///p'`.strip}" }}
@@ -223,19 +223,25 @@ error 500 do |env, exception|
   error_template(500, exception)
 end
 
-static_headers do |env|
-  env.response.headers.add("Cache-Control", "max-age=2629800")
-end
-
 # Init Kemal
-
-public_folder "assets"
 
 Kemal.config.powered_by_header = false
 add_handler FilteredCompressHandler.new
 add_handler APIHandler.new
 add_handler AuthHandler.new
 add_handler DenyFrame.new
+
+{% if compare_versions(Crystal::VERSION, "1.17.0-dev") >= 0 %}
+  Kemal.config.serve_static = false
+  add_handler Invidious::HttpServer::StaticAssetsHandler.new("assets", directory_listing: false)
+{% else %}
+  public_folder "assets"
+
+  static_headers do |env|
+    env.response.headers.add("Cache-Control", "max-age=2629800")
+  end
+{% end %}
+
 add_context_storage_type(Array(String))
 add_context_storage_type(Preferences)
 add_context_storage_type(Invidious::User)
