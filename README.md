@@ -79,6 +79,7 @@
 - Audio-only mode (with background play on mobile)
 - Support for Reddit comments
 - [Available in many languages](locales/), thanks to [our translators](#contribute)
+- Support for SSO/OIDC (check docker-compose.yml for an example on how to configure SSO flow)
 
 **Data import/export**
 - Import subscriptions from YouTube, NewPipe and FreeTube
