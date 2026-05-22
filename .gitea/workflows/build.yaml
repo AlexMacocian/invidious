@@ -1,0 +1,14 @@
+name: Build image
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: https://${{ github.repository_owner }}:${{ secrets.CALLER_REPO_PAT }}@gitea.alexandru.macocian.me/Charlie/project-charlie/.gitea/workflows/build-image.yml@main
+    with:
+      host: melina
+      dockerfile: docker/Dockerfile
+    secrets: inherit
