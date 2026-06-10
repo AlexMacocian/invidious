@@ -145,6 +145,10 @@ module Invidious::Routes::PreferencesRoute
 
     default_playlist = env.params.body["default_playlist"]?.try &.as(String)
 
+    search_privacy = env.params.body["search_privacy"]?.try &.as(String)
+    search_privacy ||= "off"
+    search_privacy = search_privacy == "on"
+
     # Convert to JSON and back again to take advantage of converters used for compatibility
     preferences = Preferences.from_json({
       annotations:                 annotations,
@@ -182,6 +186,7 @@ module Invidious::Routes::PreferencesRoute
       show_nick:                   show_nick,
       save_player_pos:             save_player_pos,
       default_playlist:            default_playlist,
+      search_privacy:              search_privacy,
     }.to_json)
 
     if user = env.get? "user"
@@ -226,7 +231,12 @@ module Invidious::Routes::PreferencesRoute
         File.write("config/config.yml", CONFIG.to_yaml)
       end
     else
-      env.response.cookies["PREFS"] = Invidious::User::Cookies.prefs(CONFIG.domain, preferences)
+      host = env.get("header_x-forwarded-host")
+      if alt = CONFIG.alternative_domains.index(host)
+        env.response.cookies["PREFS"] = Invidious::User::Cookies.prefs(CONFIG.alternative_domains[alt], preferences)
+      else
+        env.response.cookies["PREFS"] = Invidious::User::Cookies.prefs(CONFIG.domain, preferences)
+      end
     end
 
     env.redirect referer
@@ -261,7 +271,12 @@ module Invidious::Routes::PreferencesRoute
         preferences.dark_mode = "dark"
       end
 
-      env.response.cookies["PREFS"] = Invidious::User::Cookies.prefs(CONFIG.domain, preferences)
+      host = env.get("header_x-forwarded-host")
+      if alt = CONFIG.alternative_domains.index(host)
+        env.response.cookies["PREFS"] = Invidious::User::Cookies.prefs(CONFIG.alternative_domains[alt], preferences)
+      else
+        env.response.cookies["PREFS"] = Invidious::User::Cookies.prefs(CONFIG.domain, preferences)
+      end
     end
 
     if redirect
